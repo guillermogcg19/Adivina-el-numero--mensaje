@@ -1,4 +1,4 @@
-package com.mycompany.cliente2025;
+package com.mycompany.cliente;
 
 import java.io.*;
 import java.net.Socket;
