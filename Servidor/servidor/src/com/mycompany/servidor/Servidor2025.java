@@ -4,36 +4,62 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 <<<<<<< HEAD
+<<<<<<< HEAD
 import java.io.InputStreamReader; 
 =======
 import java.io.InputStreamReader;
 >>>>>>> admin-consola
+=======
+import java.io.FileWriter;
+import java.io.InputStreamReader;
+>>>>>>> autenticación_(registro/login/invitado)
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 <<<<<<< HEAD
+<<<<<<< HEAD
 import java.util.List;
 =======
+=======
+>>>>>>> autenticación_(registro/login/invitado)
 import java.util.Date;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+<<<<<<< HEAD
 >>>>>>> admin-consola
 
 public class Servidor2025 {
 
     // ====== Bandejas (inbox) ======
     private static final File MENSAJES_DIR = new File("mensajes");
+=======
+
+public class Servidor2025 {
+
+    // ====== Archivos de datos ======
+    private static final File MENSAJES_DIR  = new File("mensajes");
+    private static final File USUARIOS_FILE = new File("usuarios.txt");
+    private static final File INVITADOS_FILE = new File("invitados.txt");
+>>>>>>> autenticación_(registro/login/invitado)
 
     static {
         if (!MENSAJES_DIR.exists()) {
             MENSAJES_DIR.mkdirs();
         }
+<<<<<<< HEAD
     }
 
+=======
+        try { if (!USUARIOS_FILE.exists()) USUARIOS_FILE.createNewFile(); } catch (IOException ignored) {}
+        try { if (!INVITADOS_FILE.exists()) INVITADOS_FILE.createNewFile(); } catch (IOException ignored) {}
+    }
+
+    // ====== Inbox ======
+>>>>>>> autenticación_(registro/login/invitado)
     private static File archivoInbox(String usuario) {
         return new File(MENSAJES_DIR, usuario + ".txt");
     }
@@ -52,6 +78,7 @@ public class Servidor2025 {
     private static void vaciarInbox(String usuario) {
         File f = archivoInbox(usuario);
         try (PrintWriter pw = new PrintWriter(f)) {
+<<<<<<< HEAD
             // truncar archivo
         } catch (IOException ignored) {}
     }
@@ -64,11 +91,77 @@ public class Servidor2025 {
     private static final ConcurrentMap<String, ClientHandler> ONLINE = new ConcurrentHashMap<>();
 
     // ====== Envío de mensajes (admin / enviar usuarios) ======
+=======
+            // truncar
+        } catch (IOException ignored) {}
+    }
+
+    // ====== Usuarios ======
+    private static synchronized void guardarUsuario(String usuario, String password) throws IOException {
+        try (PrintWriter pw = new PrintWriter(new FileWriter(USUARIOS_FILE, true))) {
+            pw.println(usuario + "," + password);
+        }
+    }
+
+    private static boolean validarUsuario(String usuario, String password) {
+        try (BufferedReader br = new BufferedReader(new FileReader(USUARIOS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] p = line.split(",", 2);
+                if (p.length >= 2 && p[0].equals(usuario) && p[1].equals(password)) {
+                    return true;
+                }
+            }
+        } catch (IOException ignored) {}
+        return false;
+    }
+
+    private static synchronized void guardarInvitado(String invitado) throws IOException {
+        try (PrintWriter pw = new PrintWriter(new FileWriter(INVITADOS_FILE, true))) {
+            pw.println(invitado);
+        }
+    }
+
+    private static boolean existeUsuarioRegistrado(String usuario) {
+        try (BufferedReader br = new BufferedReader(new FileReader(USUARIOS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] p = line.split(",", 2);
+                if (p.length >= 1 && p[0].trim().equals(usuario)) return true;
+            }
+        } catch (IOException ignored) {}
+        return false;
+    }
+
+    private static List<String> listarUsuariosRegistrados() {
+        List<String> res = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(USUARIOS_FILE))) {
+            String l;
+            while ((l = br.readLine()) != null) {
+                String[] p = l.split(",", 2);
+                if (p.length >= 1) {
+                    String u = p[0].trim();
+                    if (!u.isEmpty()) res.add(u);
+                }
+            }
+        } catch (IOException ignored) {}
+        return res;
+    }
+
+    // ====== Online tracking ======
+    private static final ConcurrentMap<String, ClientHandler> ONLINE = new ConcurrentHashMap<>();
+
+    // ====== Mensajeria (admin/enviar) ======
+>>>>>>> autenticación_(registro/login/invitado)
     private static synchronized void guardarMensaje(String usuario, String texto) {
         File f = archivoInbox(usuario);
         try {
             f.getParentFile().mkdirs();
+<<<<<<< HEAD
             try (PrintWriter pw = new PrintWriter(new java.io.FileWriter(f, true))) {
+=======
+            try (PrintWriter pw = new PrintWriter(new FileWriter(f, true))) {
+>>>>>>> autenticación_(registro/login/invitado)
                 pw.println(new Date() + " | " + texto);
             }
         } catch (IOException e) {
@@ -79,6 +172,7 @@ public class Servidor2025 {
     private static void enviarMensajeASingle(String usuario, String texto) {
         guardarMensaje(usuario, texto);
         ClientHandler ch = ONLINE.get(usuario);
+<<<<<<< HEAD
         if (ch != null) {
             ch.safeSend("Tienes un nuevo mensaje en tu bandeja.");
         }
@@ -87,13 +181,24 @@ public class Servidor2025 {
     private static List<String> usuariosConocidos() {
         List<String> res = new ArrayList<>();
         if (!MENSAJES_DIR.exists()) return res;
+=======
+        if (ch != null) ch.safeSend("Tienes un nuevo mensaje en tu bandeja.");
+    }
+
+    private static List<String> usuariosConocidosPorBandeja() {
+        List<String> res = new ArrayList<>();
+>>>>>>> autenticación_(registro/login/invitado)
         File[] files = MENSAJES_DIR.listFiles((dir, name) -> name.endsWith(".txt"));
         if (files == null) return res;
         for (File f : files) {
             String name = f.getName();
+<<<<<<< HEAD
             if (name.endsWith(".txt")) {
                 res.add(name.substring(0, name.length() - 4));
             }
+=======
+            if (name.endsWith(".txt")) res.add(name.substring(0, name.length() - 4));
+>>>>>>> autenticación_(registro/login/invitado)
         }
         return res;
     }
@@ -110,9 +215,16 @@ public class Servidor2025 {
                 if (line.equalsIgnoreCase("/help")) {
                     System.out.println(
                         "Comandos:\n" +
+<<<<<<< HEAD
                         "  /online                  -> lista usuarios conectados\n" +
                         "  /enviar <usuario> <txt>  -> envia mensaje a un usuario\n" +
                         "  /broadcast <txt>         -> envia mensaje a todos los usuarios conocidos\n"
+=======
+                        "  /online                    -> lista usuarios conectados\n" +
+                        "  /usuarios                  -> lista usuarios registrados\n" +
+                        "  /enviar <usuario> <txt>    -> envia mensaje a un usuario\n" +
+                        "  /broadcast <txt>           -> envia mensaje a todos los registrados\n"
+>>>>>>> autenticación_(registro/login/invitado)
                     );
                     continue;
                 }
@@ -122,6 +234,15 @@ public class Servidor2025 {
                     continue;
                 }
 
+<<<<<<< HEAD
+=======
+                if (line.equalsIgnoreCase("/usuarios")) {
+                    List<String> u = listarUsuariosRegistrados();
+                    System.out.println("Usuarios registrados (" + u.size() + "): " + u);
+                    continue;
+                }
+
+>>>>>>> autenticación_(registro/login/invitado)
                 if (line.startsWith("/enviar ")) {
                     String rest = line.substring(8).trim();
                     int sp = rest.indexOf(' ');
@@ -131,8 +252,13 @@ public class Servidor2025 {
                     }
                     String usuario = rest.substring(0, sp).trim();
                     String texto = rest.substring(sp + 1).trim();
+<<<<<<< HEAD
                     if (usuario.isEmpty() || texto.isEmpty()) {
                         System.out.println("Uso: /enviar <usuario> <texto>");
+=======
+                    if (!existeUsuarioRegistrado(usuario)) {
+                        System.out.println("Usuario no registrado: " + usuario);
+>>>>>>> autenticación_(registro/login/invitado)
                         continue;
                     }
                     enviarMensajeASingle(usuario, "[ADMIN] " + texto);
@@ -146,6 +272,7 @@ public class Servidor2025 {
                         System.out.println("Uso: /broadcast <texto>");
                         continue;
                     }
+<<<<<<< HEAD
                     List<String> users = usuariosConocidos();
                     if (users.isEmpty()) {
                         System.out.println("No hay usuarios conocidos (aun no hay bandejas creadas).");
@@ -154,6 +281,15 @@ public class Servidor2025 {
                     for (String u : users) {
                         enviarMensajeASingle(u, "[ADMIN] " + texto);
                     }
+=======
+                    List<String> users = listarUsuariosRegistrados();
+                    if (users.isEmpty()) {
+                        // fallback si aun no hay usuarios registrados
+                        users = usuariosConocidosPorBandeja();
+                        System.out.println("No hay usuarios registrados. Usando bandejas existentes: " + users);
+                    }
+                    for (String u : users) enviarMensajeASingle(u, "[ADMIN] " + texto);
+>>>>>>> autenticación_(registro/login/invitado)
                     System.out.println("Broadcast enviado a " + users.size() + " usuarios.");
                     continue;
                 }
@@ -167,12 +303,18 @@ public class Servidor2025 {
 
     // ====== Main ======
     public static void main(String[] args) {
+<<<<<<< HEAD
         // Levantar consola admin en hilo aparte
+=======
+>>>>>>> autenticación_(registro/login/invitado)
         Thread admin = new Thread(Servidor2025::adminLoop, "ADMIN-CONSOLE");
         admin.setDaemon(true);
         admin.start();
 
+<<<<<<< HEAD
 >>>>>>> admin-consola
+=======
+>>>>>>> autenticación_(registro/login/invitado)
         try (ServerSocket servidor = new ServerSocket(9090)) {
             System.out.println("Servidor en puerto 9090. Esperando conexiones...");
             while (true) {
@@ -190,6 +332,7 @@ public class Servidor2025 {
         private final Socket socket;
         private PrintWriter out;
         private BufferedReader in;
+<<<<<<< HEAD
         private String usuarioBase;
         private final Random rand = new Random();
 
@@ -197,11 +340,17 @@ public class Servidor2025 {
         private PrintWriter out;
         private BufferedReader in;
         private String usuarioBase;
+=======
+        private String usuarioMostrado;
+        private String usuarioBase;
+        private final Random rand = new Random();
+>>>>>>> autenticación_(registro/login/invitado)
 
         ClientHandler(Socket socket) {
             this.socket = socket;
         }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         @Override
         public void run() {
@@ -263,13 +412,102 @@ public class Servidor2025 {
 
             } catch (IOException e) {
                 // cliente cerro o error IO
+=======
+        void safeSend(String msg) {
+            try { if (out != null) out.println(msg); } catch (Exception ignored) {}
+        }
+
+        @Override
+        public void run() {
+            try (Socket s = socket) {
+                out = new PrintWriter(s.getOutputStream(), true);
+                in  = new BufferedReader(new InputStreamReader(s.getInputStream()));
+
+                usuarioMostrado = autenticarUsuario();
+                if (usuarioMostrado == null) {
+                    out.println("Error en autenticacion. Cerrando conexion...");
+                    return;
+                }
+
+                // usuarioBase sin sufijo (Invitado)
+                usuarioBase = usuarioMostrado.endsWith(" (Invitado)")
+                        ? usuarioMostrado.substring(0, usuarioMostrado.indexOf(" (Invitado)"))
+                        : usuarioMostrado;
+
+                try { archivoInbox(usuarioBase).createNewFile(); } catch (IOException ignored) {}
+                ONLINE.put(usuarioBase, this);
+
+                out.println("Bienvenido " + usuarioMostrado + " al sistema.");
+                loopMenu();
+
+            } catch (IOException e) {
+                // cierre cliente o IO
+>>>>>>> autenticación_(registro/login/invitado)
             } finally {
                 if (usuarioBase != null) ONLINE.remove(usuarioBase);
             }
         }
 
+<<<<<<< HEAD
 >>>>>>> admin-consola
         // ====== Menu principal ======
+=======
+        private String autenticarUsuario() throws IOException {
+            out.println("Elige una opcion: (1) Registrarse, (2) Iniciar sesion, (3) Invitado");
+            String opcion = in.readLine();
+            if (opcion == null) return null;
+
+            switch (opcion.trim()) {
+                case "1": {
+                    out.println("Introduce un nombre de usuario:");
+                    String nuevoUsuario = in.readLine();
+                    out.println("Introduce una contrasena:");
+                    String nuevaPassword = in.readLine();
+
+                    if (nuevoUsuario == null || nuevaPassword == null || nuevoUsuario.trim().isEmpty())
+                        return null;
+
+                    if (existeUsuarioRegistrado(nuevoUsuario.trim())) {
+                        out.println("Usuario ya existe.");
+                        return null;
+                    }
+
+                    guardarUsuario(nuevoUsuario.trim(), nuevaPassword.trim());
+                    try { archivoInbox(nuevoUsuario.trim()).createNewFile(); } catch (IOException ignored) {}
+                    out.println("Usuario registrado con exito!");
+                    return nuevoUsuario.trim();
+                }
+                case "2": {
+                    out.println("Introduce tu nombre de usuario:");
+                    String usuario = in.readLine();
+                    out.println("Introduce tu contrasena:");
+                    String password = in.readLine();
+
+                    if (usuario != null && password != null && validarUsuario(usuario.trim(), password.trim())) {
+                        try { archivoInbox(usuario.trim()).createNewFile(); } catch (IOException ignored) {}
+                        out.println("Inicio de sesion exitoso!");
+                        return usuario.trim();
+                    } else {
+                        out.println("Usuario o contrasena incorrectos.");
+                        return null;
+                    }
+                }
+                case "3": {
+                    out.println("Introduce tu nombre de usuario invitado:");
+                    String invitado = in.readLine();
+                    if (invitado != null && !invitado.trim().isEmpty()) {
+                        guardarInvitado(invitado.trim());
+                        return invitado.trim() + " (Invitado)";
+                    }
+                    return "Invitado (Invitado)";
+                }
+                default:
+                    out.println("Opcion invalida.");
+                    return null;
+            }
+        }
+
+>>>>>>> autenticación_(registro/login/invitado)
         private void loopMenu() throws IOException {
             boolean seguir = true;
             while (seguir) {
@@ -286,7 +524,11 @@ public class Servidor2025 {
                 switch (op.trim()) {
                     case "1":
                         out.println("Opcion 'Jugar' aun no implementada.");
+<<<<<<< HEAD
                         // Si ya tenias el juego, aqui llama a juegoAdivina();
+=======
+                        // juegoAdivina();
+>>>>>>> autenticación_(registro/login/invitado)
                         break;
                     case "2":
                         mostrarBandeja();
@@ -301,7 +543,10 @@ public class Servidor2025 {
             }
         }
 
+<<<<<<< HEAD
         // ====== Bandeja ======
+=======
+>>>>>>> autenticación_(registro/login/invitado)
         private void mostrarBandeja() throws IOException {
             List<String> msgs = leerInbox(usuarioBase);
 
@@ -318,10 +563,14 @@ public class Servidor2025 {
 
             out.println("Quieres vaciar la bandeja? (si/no)");
 <<<<<<< HEAD
+<<<<<<< HEAD
             String r = in.readLine(); // usa el CAMPO 'in'
 =======
             String r = in.readLine();
 >>>>>>> admin-consola
+=======
+            String r = in.readLine();
+>>>>>>> autenticación_(registro/login/invitado)
             if (r != null && r.trim().equalsIgnoreCase("si")) {
                 vaciarInbox(usuarioBase);
                 out.println("Bandeja vaciada.");
@@ -330,14 +579,21 @@ public class Servidor2025 {
             }
         }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
         // ====== (Opcional) Juego si ya lo agregaste antes ======
+=======
+
+>>>>>>> autenticación_(registro/login/invitado)
         @SuppressWarnings("unused")
         private void juegoAdivina() throws IOException {
             int numeroSecreto = rand.nextInt(10) + 1;
             out.println("Adivina un numero del 1 al 10. Tienes 3 intentos.");
+<<<<<<< HEAD
 
+=======
+>>>>>>> autenticación_(registro/login/invitado)
             int intentos = 0, maxIntentos = 3;
             boolean ok = false;
             while (intentos < maxIntentos && !ok) {
@@ -365,6 +621,9 @@ public class Servidor2025 {
             }
             if (!ok) out.println("Fallaste. El numero era " + numeroSecreto + ".");
         }
+<<<<<<< HEAD
 >>>>>>> admin-consola
+=======
+>>>>>>> autenticación_(registro/login/invitado)
     }
 }
