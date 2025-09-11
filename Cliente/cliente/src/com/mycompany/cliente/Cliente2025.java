@@ -1,6 +1,9 @@
 package com.mycompany.cliente;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.Socket;
 
 public class Cliente2025 {
@@ -12,6 +15,7 @@ public class Cliente2025 {
 
             System.out.println("Conectado al servidor. Sigue las instrucciones.");
 
+            // Hilo para leer mensajes del servidor
             Thread leerServidor = new Thread(() -> {
                 try {
                     String mensajeServidor;
@@ -25,9 +29,15 @@ public class Cliente2025 {
             leerServidor.setDaemon(true);
             leerServidor.start();
 
+            // Loop principal: lee del usuario y envía al servidor
             String entradaUsuario;
             while ((entradaUsuario = lectorUsuario.readLine()) != null) {
-                escritorServidor.println(entradaUsuario.trim());
+                entradaUsuario = entradaUsuario.trim();
+                if (entradaUsuario.equalsIgnoreCase("salir")) {
+                    escritorServidor.println("3"); // opción Salir del menú
+                    break;
+                }
+                escritorServidor.println(entradaUsuario);
             }
 
         } catch (IOException e) {
