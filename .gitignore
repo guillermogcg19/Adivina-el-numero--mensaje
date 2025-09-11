@@ -1,1 +1,40 @@
-/Servidor/servidor/build/
+# =========================
+# Archivos de NetBeans / Java
+# =========================
+
+# Compilados
+*.class
+*.jar
+*.war
+*.ear
+
+# Carpetas generadas por NetBeans
+**/build/
+**/dist/
+**/nbproject/private/
+**/nbproject/private/**
+
+# Cache de NetBeans
+**/nbproject/genfiles.properties
+**/nbproject/build-impl.xml
+
+# Archivos de configuración de usuario
+*.iml
+*.ipr
+*.iws
+.idea/
+.vscode/
+
+# =========================
+# Archivos temporales del sistema
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Archivos generados por el programa
+# =========================
+mensajes/
+usuarios.txt
+invitados.txt
