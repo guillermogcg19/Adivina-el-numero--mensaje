@@ -14,7 +14,6 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,31 +27,16 @@ public class Servidor2025 {
     private static final File INVITADOS_FILE = new File("invitados.txt");
 
     static {
-        if (!MENSAJES_DIR.exists()) {
-            MENSAJES_DIR.mkdirs();
-        }
-        try {
-            if (!USUARIOS_FILE.exists()) {
-                USUARIOS_FILE.createNewFile();
-            }
-        } catch (IOException ignored) {
-        }
-        try {
-            if (!INVITADOS_FILE.exists()) {
-                INVITADOS_FILE.createNewFile();
-            }
-        } catch (IOException ignored) {
-        }
+        if (!MENSAJES_DIR.exists()) MENSAJES_DIR.mkdirs();
+        try { if (!USUARIOS_FILE.exists()) USUARIOS_FILE.createNewFile(); } catch (IOException ignored) {}
+        try { if (!INVITADOS_FILE.exists()) INVITADOS_FILE.createNewFile(); } catch (IOException ignored) {}
     }
 
     // ====== Modelo de mensaje (una línea por mensaje) ======
-// Formato: id|timestamp|from|to|estado|texto
-// estado: NORMAL, EDITADO, ELIMINADO
+    // Formato: id|timestamp|from|to|estado|texto
+    // estado: NORMAL, EDITADO, ELIMINADO
     private static class Mensaje {
-
-        enum Estado {
-            NORMAL, EDITADO, ELIMINADO
-        }
+        enum Estado { NORMAL, EDITADO, ELIMINADO }
 
         long id;
         LocalDateTime ts;
@@ -64,12 +48,7 @@ public class Servidor2025 {
         private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
         Mensaje(long id, LocalDateTime ts, String from, String to, Estado estado, String texto) {
-            this.id = id;
-            this.ts = ts;
-            this.from = from;
-            this.to = to;
-            this.estado = estado;
-            this.texto = texto;
+            this.id = id; this.ts = ts; this.from = from; this.to = to; this.estado = estado; this.texto = texto;
         }
 
         static String esc(String s) {
@@ -80,14 +59,9 @@ public class Servidor2025 {
             StringBuilder out = new StringBuilder();
             boolean esc = false;
             for (char c : s.toCharArray()) {
-                if (esc) {
-                    out.append(c);
-                    esc = false;
-                } else if (c == '\\') {
-                    esc = true;
-                } else {
-                    out.append(c);
-                }
+                if (esc) { out.append(c); esc = false; }
+                else if (c == '\\') { esc = true; }
+                else { out.append(c); }
             }
             return out.toString();
         }
@@ -102,36 +76,25 @@ public class Servidor2025 {
             StringBuilder cur = new StringBuilder();
             boolean esc = false;
             for (char c : linea.toCharArray()) {
-                if (esc) {
-                    cur.append(c);
-                    esc = false;
-                } else if (c == '\\') {
-                    esc = true;
-                } else if (c == '|' && campos < 5) {
-                    parts[campos++] = cur.toString();
-                    cur.setLength(0);
-                } else {
-                    cur.append(c);
-                }
+                if (esc) { cur.append(c); esc = false; }
+                else if (c == '\\') { esc = true; }
+                else if (c == '|' && campos < 5) { parts[campos++] = cur.toString(); cur.setLength(0); }
+                else { cur.append(c); }
             }
             parts[campos] = cur.toString();
 
             long id = Long.parseLong(parts[0]);
             LocalDateTime ts = LocalDateTime.parse(parts[1], FMT);
             String from = des(parts[2]);
-            String to = des(parts[3]);
+            String to   = des(parts[3]);
             Estado estado = Estado.valueOf(parts[4]);
-            String texto = des(parts[5]);
+            String texto  = des(parts[5]);
             return new Mensaje(id, ts, from, to, estado, texto);
         }
 
         String textoParaMostrar() {
-            if (estado == Estado.ELIMINADO) {
-                return "[mensaje eliminado]";
-            }
-            if (estado == Estado.EDITADO) {
-                return texto + " (editado)";
-            }
+            if (estado == Estado.ELIMINADO) return "[mensaje eliminado]";
+            if (estado == Estado.EDITADO)   return texto + " (editado)";
             return texto;
         }
     }
@@ -144,23 +107,15 @@ public class Servidor2025 {
     private static synchronized List<Mensaje> cargarMensajes(String usuario) {
         List<Mensaje> out = new ArrayList<>();
         File f = archivoInbox(usuario);
-        if (!f.exists()) {
-            return out;
-        }
+        if (!f.exists()) return out;
         try (BufferedReader br = new BufferedReader(new FileReader(f, StandardCharsets.UTF_8))) {
             String l;
             while ((l = br.readLine()) != null) {
                 l = l.trim();
-                if (l.isEmpty()) {
-                    continue;
-                }
-                try {
-                    out.add(Mensaje.parsear(l));
-                } catch (Exception ignored) {
-                }
+                if (l.isEmpty()) continue;
+                try { out.add(Mensaje.parsear(l)); } catch (Exception ignored) {}
             }
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
         return out;
     }
 
@@ -169,44 +124,18 @@ public class Servidor2025 {
         try {
             f.getParentFile().mkdirs();
             try (PrintWriter pw = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8, false))) {
-                for (Mensaje m : mensajes) {
-                    pw.println(m.serializar());
-                }
+                for (Mensaje m : mensajes) pw.println(m.serializar());
             }
         } catch (IOException e) {
             System.out.println("Error guardando inbox de " + usuario + ": " + e.getMessage());
         }
     }
 
-    private static synchronized List<Mensaje> cargarMensajes(String usuario) {
-        List<Mensaje> out = new ArrayList<>();
-        File f = archivoInbox(usuario);
-        if (!f.exists()) {
-            return out;
-        }
-        try (BufferedReader br = new BufferedReader(new FileReader(f, StandardCharsets.UTF_8))) {
-            String l;
-            while ((l = br.readLine()) != null) {
-                l = l.trim();
-                if (l.isEmpty()) {
-                    continue;
-                }
-                try {
-                    out.add(Mensaje.parsear(l));
-                } catch (Exception ignored) {
-                }
-            }
-        } catch (IOException ignored) {
-        }
-        return out;
-    }
-
     private static synchronized void vaciarInbox(String usuario) {
         File f = archivoInbox(usuario);
         try (PrintWriter pw = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8, false))) {
             // truncado
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
     }
 
     // ====== Usuarios (registro / login) ======
@@ -221,12 +150,9 @@ public class Servidor2025 {
             String line;
             while ((line = br.readLine()) != null) {
                 String[] p = line.split(",", 2);
-                if (p.length >= 2 && p[0].equals(usuario) && p[1].equals(password)) {
-                    return true;
-                }
+                if (p.length >= 2 && p[0].equals(usuario) && p[1].equals(password)) return true;
             }
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
         return false;
     }
 
@@ -241,12 +167,9 @@ public class Servidor2025 {
             String line;
             while ((line = br.readLine()) != null) {
                 String[] p = line.split(",", 2);
-                if (p.length >= 1 && p[0].trim().equals(usuario)) {
-                    return true;
-                }
+                if (p.length >= 1 && p[0].trim().equals(usuario)) return true;
             }
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
         return false;
     }
 
@@ -258,20 +181,17 @@ public class Servidor2025 {
                 String[] p = l.split(",", 2);
                 if (p.length >= 1) {
                     String u = p[0].trim();
-                    if (!u.isEmpty()) {
-                        res.add(u);
-                    }
+                    if (!u.isEmpty()) res.add(u);
                 }
             }
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
         return res;
     }
 
     // ====== Tracking de conectados ======
     private static final ConcurrentMap<String, ClientHandler> ONLINE = new ConcurrentHashMap<>();
 
-    // ====== Mensajería (guardar + notificar) ======
+    // ====== Mensajería con IDs (enviar / editar / borrar) ======
     private static final AtomicLong MSG_SEQ = new AtomicLong(System.currentTimeMillis());
 
     private static synchronized long enviarMensajeUsuario(String from, String to, String texto) {
@@ -287,9 +207,7 @@ public class Servidor2025 {
         guardarMensajes(to, lista);
 
         ClientHandler ch = ONLINE.get(to);
-        if (ch != null) {
-            ch.safeSend("Tienes un nuevo mensaje de " + from + ". Usa '2' para abrir tu bandeja.");
-        }
+        if (ch != null) ch.safeSend("Tienes un nuevo mensaje de " + from + ". Usa '2' para abrir tu bandeja.");
         return m.id;
     }
 
@@ -304,9 +222,7 @@ public class Servidor2025 {
                 break;
             }
         }
-        if (cambiado) {
-            guardarMensajes(destinatario, lista);
-        }
+        if (cambiado) guardarMensajes(destinatario, lista);
         return cambiado;
     }
 
@@ -321,23 +237,17 @@ public class Servidor2025 {
                 break;
             }
         }
-        if (cambiado) {
-            guardarMensajes(destinatario, lista);
-        }
+        if (cambiado) guardarMensajes(destinatario, lista);
         return cambiado;
     }
 
     private static List<String> usuariosConocidosPorBandeja() {
         List<String> res = new ArrayList<>();
         File[] files = MENSAJES_DIR.listFiles((dir, name) -> name.endsWith(".txt"));
-        if (files == null) {
-            return res;
-        }
+        if (files == null) return res;
         for (File f : files) {
             String name = f.getName();
-            if (name.endsWith(".txt")) {
-                res.add(name.substring(0, name.length() - 4));
-            }
+            if (name.endsWith(".txt")) res.add(name.substring(0, name.length() - 4));
         }
         return res;
     }
@@ -349,23 +259,18 @@ public class Servidor2025 {
             String line;
             while ((line = br.readLine()) != null) {
                 line = line.trim();
-                if (line.isEmpty()) {
-                    continue;
-                }
-                
+                if (line.isEmpty()) continue;
 
                 if (line.equalsIgnoreCase("/help")) {
                     System.out.println(
-                            "Comandos:\n"
-                            + "  /online                    -> lista usuarios conectados\n"
-                            + "  /usuarios                  -> lista usuarios registrados\n"
-                            + "  /enviar <usuario> <txt>    -> envia mensaje a un usuario\n"
-                                    
-                            + "  /broadcast <txt>           -> envia mensaje a todos los registrados\n"
+                        "Comandos:\n" +
+                        "  /online                    -> lista usuarios conectados\n" +
+                        "  /usuarios                  -> lista usuarios registrados\n" +
+                        "  /enviar <usuario> <txt>    -> envia mensaje a un usuario\n" +
+                        "  /broadcast <txt>           -> envia mensaje a todos los registrados\n"
                     );
                     continue;
                 }
-                
 
                 if (line.equalsIgnoreCase("/online")) {
                     System.out.println("Conectados (" + ONLINE.size() + "): " + ONLINE.keySet());
@@ -391,8 +296,8 @@ public class Servidor2025 {
                         System.out.println("Usuario no registrado: " + usuario);
                         continue;
                     }
-                    enviarMensajeASingle(usuario, "[ADMIN] " + texto);
-                    System.out.println("Mensaje enviado a " + usuario);
+                    long id = enviarMensajeUsuario("[ADMIN]", usuario, texto);
+                    System.out.println("Mensaje enviado a " + usuario + " (id=" + id + ")");
                     continue;
                 }
 
@@ -407,9 +312,7 @@ public class Servidor2025 {
                         users = usuariosConocidosPorBandeja(); // fallback
                         System.out.println("No hay usuarios registrados. Usando bandejas: " + users);
                     }
-                    for (String u : users) {
-                        enviarMensajeASingle(u, "[ADMIN] " + texto);
-                    }
+                    for (String u : users) enviarMensajeUsuario("[ADMIN]", u, texto);
                     System.out.println("Broadcast enviado a " + users.size() + " usuarios.");
                     continue;
                 }
@@ -441,7 +344,6 @@ public class Servidor2025 {
 
     // ====== Handler por cliente ======
     private static class ClientHandler implements Runnable {
-
         private final Socket socket;
         private PrintWriter out;
         private BufferedReader in;
@@ -449,24 +351,15 @@ public class Servidor2025 {
         private String usuarioBase;     // nombre sin sufijo
         private final Random rand = new Random();
 
-        ClientHandler(Socket socket) {
-            this.socket = socket;
-        }
+        ClientHandler(Socket socket) { this.socket = socket; }
 
-        void safeSend(String msg) {
-            try {
-                if (out != null) {
-                    out.println(msg);
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        void safeSend(String msg) { try { if (out != null) out.println(msg); } catch (Exception ignored) {} }
 
         @Override
         public void run() {
             try (Socket s = socket) {
                 out = new PrintWriter(s.getOutputStream(), true);
-                in = new BufferedReader(new InputStreamReader(s.getInputStream()));
+                in  = new BufferedReader(new InputStreamReader(s.getInputStream()));
 
                 usuarioMostrado = autenticarUsuario();
                 if (usuarioMostrado == null) {
@@ -478,10 +371,7 @@ public class Servidor2025 {
                         ? usuarioMostrado.substring(0, usuarioMostrado.indexOf(" (Invitado)"))
                         : usuarioMostrado;
 
-                try {
-                    archivoInbox(usuarioBase).createNewFile();
-                } catch (IOException ignored) {
-                }
+                try { archivoInbox(usuarioBase).createNewFile(); } catch (IOException ignored) {}
                 ONLINE.put(usuarioBase, this);
 
                 out.println("Bienvenido " + usuarioMostrado + " al sistema.");
@@ -490,9 +380,7 @@ public class Servidor2025 {
             } catch (IOException e) {
                 // cierre cliente o IO
             } finally {
-                if (usuarioBase != null) {
-                    ONLINE.remove(usuarioBase);
-                }
+                if (usuarioBase != null) ONLINE.remove(usuarioBase);
             }
         }
 
@@ -500,9 +388,7 @@ public class Servidor2025 {
         private String autenticarUsuario() throws IOException {
             out.println("Elige una opcion: (1) Registrarse, (2) Iniciar sesion, (3) Invitado");
             String opcion = in.readLine();
-            if (opcion == null) {
-                return null;
-            }
+            if (opcion == null) return null;
 
             switch (opcion.trim()) {
                 case "1": {
@@ -511,23 +397,16 @@ public class Servidor2025 {
                     out.println("Introduce una contrasena:");
                     String nuevaPassword = in.readLine();
 
-                    if (nuevoUsuario == null || nuevaPassword == null || nuevoUsuario.trim().isEmpty()) {
+                    if (nuevoUsuario == null || nuevaPassword == null || nuevoUsuario.trim().isEmpty())
                         return null;
-                    }
 
                     if (existeUsuarioRegistrado(nuevoUsuario.trim())) {
                         out.println("Usuario ya existe.");
                         return null;
                     }
 
-                    try {
-                        guardarUsuario(nuevoUsuario.trim(), nuevaPassword.trim());
-                    } catch (IOException ignored) {
-                    }
-                    try {
-                        archivoInbox(nuevoUsuario.trim()).createNewFile();
-                    } catch (IOException ignored) {
-                    }
+                    try { guardarUsuario(nuevoUsuario.trim(), nuevaPassword.trim()); } catch (IOException ignored) {}
+                    try { archivoInbox(nuevoUsuario.trim()).createNewFile(); } catch (IOException ignored) {}
                     out.println("Usuario registrado con exito!");
                     return nuevoUsuario.trim();
                 }
@@ -538,10 +417,7 @@ public class Servidor2025 {
                     String password = in.readLine();
 
                     if (usuario != null && password != null && validarUsuario(usuario.trim(), password.trim())) {
-                        try {
-                            archivoInbox(usuario.trim()).createNewFile();
-                        } catch (IOException ignored) {
-                        }
+                        try { archivoInbox(usuario.trim()).createNewFile(); } catch (IOException ignored) {}
                         out.println("Inicio de sesion exitoso!");
                         return usuario.trim();
                     } else {
@@ -553,10 +429,7 @@ public class Servidor2025 {
                     out.println("Introduce tu nombre de usuario invitado:");
                     String invitado = in.readLine();
                     if (invitado != null && !invitado.trim().isEmpty()) {
-                        try {
-                            guardarInvitado(invitado.trim());
-                        } catch (IOException ignored) {
-                        }
+                        try { guardarInvitado(invitado.trim()); } catch (IOException ignored) {}
                         return invitado.trim() + " (Invitado)";
                     }
                     return "Invitado (Invitado)";
@@ -579,70 +452,52 @@ public class Servidor2025 {
                 out.println("4) Enviar mensaje a usuario");
                 out.println("5) Ver conectados");
                 out.println("6) Editar mensaje enviado");
-out.println("7) Borrar mensaje enviado");
-out.println("8) Ver mis enviados hacia un usuario");
-
+                out.println("7) Borrar mensaje enviado");
+                out.println("8) Ver mis enviados hacia un usuario");
                 out.println("Elige opcion:");
 
                 String op = in.readLine();
-                if (op == null) {
-                    break;
-                }
+                if (op == null) break;
 
                 switch (op.trim()) {
-                    case "1":
-                        juegoAdivina();
-                        break;
-                    case "2":
-                        mostrarBandeja();
-                        break;
-                    case "3":
-                        out.println("Gracias. Adios!");
-                        seguir = false;
-                        break;
-                    case "4":
-                        enviarMensajeAUsuario();
-                        break;
-                    case "5":
-                        verConectados();
-                        break;
-                        case "6": editarMensajeFlujo(); break;
-case "7": borrarMensajeFlujo(); break;
-case "8": verMisEnviadosFlujo(); break;
-
-                    default:
-                        out.println("Opcion invalida.");
+                    case "1": juegoAdivina(); break;
+                    case "2": mostrarBandeja(); break;
+                    case "3": out.println("Gracias. Adios!"); seguir = false; break;
+                    case "4": enviarMensajeAUsuario(); break;
+                    case "5": verConectados(); break;
+                    case "6": editarMensajeFlujo(); break;
+                    case "7": borrarMensajeFlujo(); break;
+                    case "8": verMisEnviadosFlujo(); break;
+                    default: out.println("Opcion invalida.");
                 }
             }
         }
 
         // ====== Bandeja ======
         private void mostrarBandeja() throws IOException {
-    List<Mensaje> msgs = cargarMensajes(usuarioBase);
-    if (msgs.isEmpty()) {
-        out.println("Tu bandeja esta vacia.");
-        return;
-    }
-    out.println("Mensajes (" + msgs.size() + "):");
-    for (Mensaje m : msgs) {
-        String hora = m.ts.toLocalTime().withNano(0).toString();
-        out.println(" [" + m.id + "] " + hora + " " + m.from + ": " + m.textoParaMostrar());
-    }
+            List<Mensaje> msgs = cargarMensajes(usuarioBase);
+            if (msgs.isEmpty()) {
+                out.println("Tu bandeja esta vacia.");
+                return;
+            }
+            out.println("Mensajes (" + msgs.size() + "):");
+            for (Mensaje m : msgs) {
+                String hora = m.ts.toLocalTime().withNano(0).toString();
+                out.println(" [" + m.id + "] " + hora + " " + m.from + ": " + m.textoParaMostrar());
+            }
 
-    out.println("Quieres vaciar la bandeja? (si/no)");
-    String r = in.readLine();
-    if (r != null && r.trim().equalsIgnoreCase("si")) {
-        vaciarInbox(usuarioBase);
-        out.println("Bandeja vaciada.");
-    } else {
-        out.println("Bandeja conservada.");
-    }
-}
-
+            out.println("Quieres vaciar la bandeja? (si/no)");
+            String r = in.readLine();
+            if (r != null && r.trim().equalsIgnoreCase("si")) {
+                vaciarInbox(usuarioBase);
+                out.println("Bandeja vaciada.");
+            } else {
+                out.println("Bandeja conservada.");
+            }
+        }
 
         // ====== Mensajería usuario → usuario ======
         private void enviarMensajeAUsuario() throws IOException {
-            
             out.println("Usuario destinatario:");
             String dest = in.readLine();
             if (dest == null || dest.trim().isEmpty()) {
@@ -660,67 +515,66 @@ case "8": verMisEnviadosFlujo(); break;
                 out.println("Cancelado: mensaje vacio.");
                 return;
             }
-           long id = enviarMensajeUsuario(usuarioBase, dest, texto.trim());{
-out.println("Mensaje enviado a " + dest + ". id=" + id);
- }
-           
-           private void editarMensajeFlujo() throws IOException {
-    out.println("Destinatario del mensaje a editar:");
-    String dest = in.readLine();
-    if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
-    dest = dest.trim();
-
-    out.println("ID del mensaje a editar:");
-    String sId = in.readLine();
-    if (sId == null || sId.trim().isEmpty()) { out.println("Cancelado."); return; }
-
-    long id;
-    try { id = Long.parseLong(sId.trim()); }
-    catch (NumberFormatException e) { out.println("ID invalido."); return; }
-
-    out.println("Nuevo texto:");
-    String nuevo = in.readLine();
-    if (nuevo == null) { out.println("Cancelado."); return; }
-
-    boolean ok = editarMensaje(usuarioBase, dest, id, nuevo.trim());
-    out.println(ok ? "OK Mensaje editado." : "ERROR No se pudo editar (revisa id/destinatario/permisos).");
-}
-
-private void borrarMensajeFlujo() throws IOException {
-    out.println("Destinatario del mensaje a borrar:");
-    String dest = in.readLine();
-    if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
-    dest = dest.trim();
-
-    out.println("ID del mensaje a borrar:");
-    String sId = in.readLine();
-    if (sId == null || sId.trim().isEmpty()) { out.println("Cancelado."); return; }
-
-    long id;
-    try { id = Long.parseLong(sId.trim()); }
-    catch (NumberFormatException e) { out.println("ID invalido."); return; }
-
-    boolean ok = borrarMensaje(usuarioBase, dest, id);
-    out.println(ok ? "OK Mensaje borrado." : "ERROR No se pudo borrar (revisa id/destinatario/permisos).");
-}
-
-private void verMisEnviadosFlujo() throws IOException {
-    out.println("Ver mis enviados hacia (usuario):");
-    String dest = in.readLine();
-    if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
-    dest = dest.trim();
-
-    List<Mensaje> lista = cargarMensajes(dest);
-    boolean alguno = false;
-    for (Mensaje m : lista) {
-        if (m.from.equals(usuarioBase)) {
-            alguno = true;
-            out.println(" [" + m.id + "] " + m.estado + " -> " + m.textoParaMostrar());
+            long id = enviarMensajeUsuario(usuarioBase, dest, texto.trim());
+            out.println("Mensaje enviado a " + dest + ". id=" + id);
         }
-    }
-    if (!alguno) out.println("No hay mensajes enviados a " + dest + ".");
-}
 
+        private void editarMensajeFlujo() throws IOException {
+            out.println("Destinatario del mensaje a editar:");
+            String dest = in.readLine();
+            if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
+            dest = dest.trim();
+
+            out.println("ID del mensaje a editar:");
+            String sId = in.readLine();
+            if (sId == null || sId.trim().isEmpty()) { out.println("Cancelado."); return; }
+
+            long id;
+            try { id = Long.parseLong(sId.trim()); }
+            catch (NumberFormatException e) { out.println("ID invalido."); return; }
+
+            out.println("Nuevo texto:");
+            String nuevo = in.readLine();
+            if (nuevo == null) { out.println("Cancelado."); return; }
+
+            boolean ok = editarMensaje(usuarioBase, dest, id, nuevo.trim());
+            out.println(ok ? "OK Mensaje editado." : "ERROR No se pudo editar (revisa id/destinatario/permisos).");
+        }
+
+        private void borrarMensajeFlujo() throws IOException {
+            out.println("Destinatario del mensaje a borrar:");
+            String dest = in.readLine();
+            if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
+            dest = dest.trim();
+
+            out.println("ID del mensaje a borrar:");
+            String sId = in.readLine();
+            if (sId == null || sId.trim().isEmpty()) { out.println("Cancelado."); return; }
+
+            long id;
+            try { id = Long.parseLong(sId.trim()); }
+            catch (NumberFormatException e) { out.println("ID invalido."); return; }
+
+            boolean ok = borrarMensaje(usuarioBase, dest, id);
+            out.println(ok ? "OK Mensaje borrado." : "ERROR No se pudo borrar (revisa id/destinatario/permisos).");
+        }
+
+        private void verMisEnviadosFlujo() throws IOException {
+            out.println("Ver mis enviados hacia (usuario):");
+            String dest = in.readLine();
+            if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
+            dest = dest.trim();
+
+            List<Mensaje> lista = cargarMensajes(dest);
+            boolean alguno = false;
+            for (Mensaje m : lista) {
+                if (m.from.equals(usuarioBase)) {
+                    alguno = true;
+                    out.println(" [" + m.id + "] " + m.estado + " -> " + m.textoParaMostrar());
+                }
+            }
+            if (!alguno) out.println("No hay mensajes enviados a " + dest + ".");
+        }
 
         private void verConectados() {
             out.println("Conectados (" + ONLINE.size() + "): " + ONLINE.keySet());
@@ -737,9 +591,7 @@ private void verMisEnviadosFlujo() throws IOException {
                 out.println("Adivina un numero del 1 al 10. Tienes 3 intentos.");
                 while (intentos < maxIntentos && !ok) {
                     String entrada = in.readLine();
-                    if (entrada == null) {
-                        return;
-                    }
+                    if (entrada == null) return;
                     entrada = entrada.trim();
                     if (entrada.isEmpty()) {
                         out.println("Escribe un numero valido. No pierdes intento.");
@@ -760,9 +612,7 @@ private void verMisEnviadosFlujo() throws IOException {
                         out.println("Entrada invalida. No pierdes intento.");
                     }
                 }
-                if (!ok) {
-                    out.println("Fallaste. El numero era " + numeroSecreto + ".");
-                }
+                if (!ok) out.println("Fallaste. El numero era " + numeroSecreto + ".");
 
                 out.println("¿Jugar otra vez? (si/no)");
                 String r = in.readLine();
