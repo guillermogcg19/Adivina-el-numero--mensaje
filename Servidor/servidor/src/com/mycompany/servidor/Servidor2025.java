@@ -119,14 +119,43 @@ private static class Mensaje {
     } catch (IOException ignored) {}
     return out;
 }
-
-
-    private static void vaciarInbox(String usuario) {
-        File f = archivoInbox(usuario);
-        try (PrintWriter pw = new PrintWriter(f)) {
-            // truncar archivo
-        } catch (IOException ignored) {}
+    private static synchronized void guardarMensajes(String usuario, List<Mensaje> mensajes) {
+    File f = archivoInbox(usuario);
+    try {
+        f.getParentFile().mkdirs();
+        try (PrintWriter pw = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8, false))) {
+            for (Mensaje m : mensajes) pw.println(m.serializar());
+        }
+    } catch (IOException e) {
+        System.out.println("Error guardando inbox de " + usuario + ": " + e.getMessage());
     }
+}
+
+    private static synchronized List<Mensaje> cargarMensajes(String usuario) {
+    List<Mensaje> out = new ArrayList<>();
+    File f = archivoInbox(usuario);
+    if (!f.exists()) return out;
+    try (BufferedReader br = new BufferedReader(new FileReader(f, StandardCharsets.UTF_8))) {
+        String l;
+        while ((l = br.readLine()) != null) {
+            l = l.trim();
+            if (l.isEmpty()) continue;
+            try { out.add(Mensaje.parsear(l)); } catch (Exception ignored) {}
+        }
+    } catch (IOException ignored) {}
+    return out;
+}
+
+   
+
+
+   private static synchronized void vaciarInbox(String usuario) {
+    File f = archivoInbox(usuario);
+    try (PrintWriter pw = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8, false))) {
+        // truncado
+    } catch (IOException ignored) {}
+}
+
 
     // ====== Usuarios (registro / login) ======
     private static synchronized void guardarUsuario(String usuario, String password) throws IOException {
