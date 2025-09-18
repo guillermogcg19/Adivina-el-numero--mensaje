@@ -1,5 +1,9 @@
 package com.mycompany.servidor;
 
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.concurrent.atomic.AtomicLong;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -28,6 +32,73 @@ public class Servidor2025 {
         try { if (!USUARIOS_FILE.exists())  USUARIOS_FILE.createNewFile(); }  catch (IOException ignored) {}
         try { if (!INVITADOS_FILE.exists()) INVITADOS_FILE.createNewFile(); } catch (IOException ignored) {}
     }
+    
+    // ====== Modelo de mensaje (una línea por mensaje) ======
+// Formato: id|timestamp|from|to|estado|texto
+// estado: NORMAL, EDITADO, ELIMINADO
+private static class Mensaje {
+    enum Estado { NORMAL, EDITADO, ELIMINADO }
+
+    long id;
+    LocalDateTime ts;
+    String from;
+    String to;
+    Estado estado;
+    String texto;
+
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+
+    Mensaje(long id, LocalDateTime ts, String from, String to, Estado estado, String texto) {
+        this.id = id; this.ts = ts; this.from = from; this.to = to; this.estado = estado; this.texto = texto;
+    }
+
+    static String esc(String s) {
+        return s.replace("\\", "\\\\").replace("|", "\\|");
+    }
+    static String des(String s) {
+        StringBuilder out = new StringBuilder();
+        boolean esc = false;
+        for (char c : s.toCharArray()) {
+            if (esc) { out.append(c); esc = false; }
+            else if (c == '\\') { esc = true; }
+            else { out.append(c); }
+        }
+        return out.toString();
+    }
+
+    String serializar() {
+        return id + "|" + FMT.format(ts) + "|" + esc(from) + "|" + esc(to) + "|" + estado + "|" + esc(texto);
+    }
+
+    static Mensaje parsear(String linea) {
+        String[] parts = new String[6];
+        int campos = 0;
+        StringBuilder cur = new StringBuilder();
+        boolean esc = false;
+        for (char c : linea.toCharArray()) {
+            if (esc) { cur.append(c); esc = false; }
+            else if (c == '\\') { esc = true; }
+            else if (c == '|' && campos < 5) { parts[campos++] = cur.toString(); cur.setLength(0); }
+            else { cur.append(c); }
+        }
+        parts[campos] = cur.toString();
+
+        long id = Long.parseLong(parts[0]);
+        LocalDateTime ts = LocalDateTime.parse(parts[1], FMT);
+        String from = des(parts[2]);
+        String to   = des(parts[3]);
+        Estado estado = Estado.valueOf(parts[4]);
+        String texto  = des(parts[5]);
+        return new Mensaje(id, ts, from, to, estado, texto);
+    }
+
+    String textoParaMostrar() {
+        if (estado == Estado.ELIMINADO) return "[mensaje eliminado]";
+        if (estado == Estado.EDITADO)   return texto + " (editado)";
+        return texto;
+    }
+}
+
 
     // ====== Inbox ======
     private static File archivoInbox(String usuario) {
