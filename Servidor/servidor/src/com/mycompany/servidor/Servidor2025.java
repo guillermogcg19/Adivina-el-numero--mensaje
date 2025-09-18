@@ -105,16 +105,21 @@ private static class Mensaje {
         return new File(MENSAJES_DIR, usuario + ".txt");
     }
 
-    private static List<String> leerInbox(String usuario) {
-        List<String> msgs = new ArrayList<>();
-        File f = archivoInbox(usuario);
-        if (!f.exists()) return msgs;
-        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
-            String l;
-            while ((l = br.readLine()) != null) msgs.add(l);
-        } catch (IOException ignored) {}
-        return msgs;
-    }
+    private static synchronized List<Mensaje> cargarMensajes(String usuario) {
+    List<Mensaje> out = new ArrayList<>();
+    File f = archivoInbox(usuario);
+    if (!f.exists()) return out;
+    try (BufferedReader br = new BufferedReader(new FileReader(f, StandardCharsets.UTF_8))) {
+        String l;
+        while ((l = br.readLine()) != null) {
+            l = l.trim();
+            if (l.isEmpty()) continue;
+            try { out.add(Mensaje.parsear(l)); } catch (Exception ignored) {}
+        }
+    } catch (IOException ignored) {}
+    return out;
+}
+
 
     private static void vaciarInbox(String usuario) {
         File f = archivoInbox(usuario);
