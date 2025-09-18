@@ -352,6 +352,7 @@ public class Servidor2025 {
                 if (line.isEmpty()) {
                     continue;
                 }
+                
 
                 if (line.equalsIgnoreCase("/help")) {
                     System.out.println(
@@ -359,10 +360,12 @@ public class Servidor2025 {
                             + "  /online                    -> lista usuarios conectados\n"
                             + "  /usuarios                  -> lista usuarios registrados\n"
                             + "  /enviar <usuario> <txt>    -> envia mensaje a un usuario\n"
+                                    
                             + "  /broadcast <txt>           -> envia mensaje a todos los registrados\n"
                     );
                     continue;
                 }
+                
 
                 if (line.equalsIgnoreCase("/online")) {
                     System.out.println("Conectados (" + ONLINE.size() + "): " + ONLINE.keySet());
@@ -575,6 +578,10 @@ public class Servidor2025 {
                 out.println("3) Salir");
                 out.println("4) Enviar mensaje a usuario");
                 out.println("5) Ver conectados");
+                out.println("6) Editar mensaje enviado");
+out.println("7) Borrar mensaje enviado");
+out.println("8) Ver mis enviados hacia un usuario");
+
                 out.println("Elige opcion:");
 
                 String op = in.readLine();
@@ -599,6 +606,10 @@ public class Servidor2025 {
                     case "5":
                         verConectados();
                         break;
+                        case "6": editarMensajeFlujo(); break;
+case "7": borrarMensajeFlujo(); break;
+case "8": verMisEnviadosFlujo(); break;
+
                     default:
                         out.println("Opcion invalida.");
                 }
@@ -607,29 +618,31 @@ public class Servidor2025 {
 
         // ====== Bandeja ======
         private void mostrarBandeja() throws IOException {
-            List<String> msgs = leerInbox(usuarioBase);
-            if (msgs.isEmpty()) {
-                out.println("Tu bandeja esta vacia.");
-                return;
-            }
-            out.println("Mensajes (" + msgs.size() + "):");
-            int i = 1;
-            for (String m : msgs) {
-                out.println(" " + (i++) + ") " + m);
-            }
+    List<Mensaje> msgs = cargarMensajes(usuarioBase);
+    if (msgs.isEmpty()) {
+        out.println("Tu bandeja esta vacia.");
+        return;
+    }
+    out.println("Mensajes (" + msgs.size() + "):");
+    for (Mensaje m : msgs) {
+        String hora = m.ts.toLocalTime().withNano(0).toString();
+        out.println(" [" + m.id + "] " + hora + " " + m.from + ": " + m.textoParaMostrar());
+    }
 
-            out.println("Quieres vaciar la bandeja? (si/no)");
-            String r = in.readLine();
-            if (r != null && r.trim().equalsIgnoreCase("si")) {
-                vaciarInbox(usuarioBase);
-                out.println("Bandeja vaciada.");
-            } else {
-                out.println("Bandeja conservada.");
-            }
-        }
+    out.println("Quieres vaciar la bandeja? (si/no)");
+    String r = in.readLine();
+    if (r != null && r.trim().equalsIgnoreCase("si")) {
+        vaciarInbox(usuarioBase);
+        out.println("Bandeja vaciada.");
+    } else {
+        out.println("Bandeja conservada.");
+    }
+}
+
 
         // ====== Mensajería usuario → usuario ======
         private void enviarMensajeAUsuario() throws IOException {
+            
             out.println("Usuario destinatario:");
             String dest = in.readLine();
             if (dest == null || dest.trim().isEmpty()) {
@@ -647,9 +660,67 @@ public class Servidor2025 {
                 out.println("Cancelado: mensaje vacio.");
                 return;
             }
-            enviarMensajeASingle(dest, "[De " + usuarioBase + "] " + texto.trim());
-            out.println("Mensaje enviado a " + dest + ".");
+           long id = enviarMensajeUsuario(usuarioBase, dest, texto.trim());{
+out.println("Mensaje enviado a " + dest + ". id=" + id);
+ }
+           
+           private void editarMensajeFlujo() throws IOException {
+    out.println("Destinatario del mensaje a editar:");
+    String dest = in.readLine();
+    if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
+    dest = dest.trim();
+
+    out.println("ID del mensaje a editar:");
+    String sId = in.readLine();
+    if (sId == null || sId.trim().isEmpty()) { out.println("Cancelado."); return; }
+
+    long id;
+    try { id = Long.parseLong(sId.trim()); }
+    catch (NumberFormatException e) { out.println("ID invalido."); return; }
+
+    out.println("Nuevo texto:");
+    String nuevo = in.readLine();
+    if (nuevo == null) { out.println("Cancelado."); return; }
+
+    boolean ok = editarMensaje(usuarioBase, dest, id, nuevo.trim());
+    out.println(ok ? "OK Mensaje editado." : "ERROR No se pudo editar (revisa id/destinatario/permisos).");
+}
+
+private void borrarMensajeFlujo() throws IOException {
+    out.println("Destinatario del mensaje a borrar:");
+    String dest = in.readLine();
+    if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
+    dest = dest.trim();
+
+    out.println("ID del mensaje a borrar:");
+    String sId = in.readLine();
+    if (sId == null || sId.trim().isEmpty()) { out.println("Cancelado."); return; }
+
+    long id;
+    try { id = Long.parseLong(sId.trim()); }
+    catch (NumberFormatException e) { out.println("ID invalido."); return; }
+
+    boolean ok = borrarMensaje(usuarioBase, dest, id);
+    out.println(ok ? "OK Mensaje borrado." : "ERROR No se pudo borrar (revisa id/destinatario/permisos).");
+}
+
+private void verMisEnviadosFlujo() throws IOException {
+    out.println("Ver mis enviados hacia (usuario):");
+    String dest = in.readLine();
+    if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
+    dest = dest.trim();
+
+    List<Mensaje> lista = cargarMensajes(dest);
+    boolean alguno = false;
+    for (Mensaje m : lista) {
+        if (m.from.equals(usuarioBase)) {
+            alguno = true;
+            out.println(" [" + m.id + "] " + m.estado + " -> " + m.textoParaMostrar());
         }
+    }
+    if (!alguno) out.println("No hay mensajes enviados a " + dest + ".");
+}
+
 
         private void verConectados() {
             out.println("Conectados (" + ONLINE.size() + "): " + ONLINE.keySet());
