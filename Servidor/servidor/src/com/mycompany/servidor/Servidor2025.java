@@ -14,8 +14,10 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,12 +25,12 @@ import java.util.concurrent.ConcurrentMap;
 
 public class Servidor2025 {
 
-    // ====== Archivos de datos ======
+    // ====== Archivos de datos (lado servidor) ======
     private static final File MENSAJES_DIR = new File("mensajes");
-    private static final File BLOQUEOS_DIR = new File("bloqueos"); // lista de bloqueados por usuario
+    private static final File BLOQUEOS_DIR = new File("bloqueos");
     private static final File USUARIOS_FILE = new File("usuarios.txt");
     private static final File INVITADOS_FILE = new File("invitados.txt");
-    private static final File ARCHIVOS_DIR = new File("archivos"); // historial por usuario
+    private static final File ARCHIVOS_DIR = new File("archivos"); // logs internos servidor (opcional)
 
     static {
         try { if (!MENSAJES_DIR.exists()) MENSAJES_DIR.mkdirs(); } catch (Exception ignored) {}
@@ -39,18 +41,14 @@ public class Servidor2025 {
     }
 
     // ====== Modelo de mensaje ======
-    // Formato persistido: id|timestamp|from|to|estado|texto
     private static class Mensaje {
-
         enum Estado { NORMAL, EDITADO, ELIMINADO }
-
         long id;
         LocalDateTime ts;
         String from;
         String to;
         Estado estado;
         String texto;
-
         private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
         Mensaje(long id, LocalDateTime ts, String from, String to, Estado estado, String texto) {
@@ -85,7 +83,6 @@ public class Servidor2025 {
                 else { cur.append(c); }
             }
             parts[campos] = cur.toString();
-
             return new Mensaje(
                     Long.parseLong(parts[0]),
                     LocalDateTime.parse(parts[1], FMT),
@@ -104,7 +101,7 @@ public class Servidor2025 {
     }
 
     // ====== Helpers ======
-    private static String shortId(long id) { return Long.toString(id, 36).toUpperCase(); } // Base36 corto
+    private static String shortId(long id) { return Long.toString(id, 36).toUpperCase(); } // Base36
     private static Long parseFlexibleId(String s) {
         if (s == null || s.trim().isEmpty()) return null;
         s = s.trim();
@@ -119,7 +116,6 @@ public class Servidor2025 {
         if (s == null) return "desconocido";
         return s.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
     }
-    // Directorio de conversación para "baseUser" con "other" -> archivos/baseUser/mensajes_other/
     private static File convDir(String baseUser, String other) {
         File userDir = new File(ARCHIVOS_DIR, safeName(baseUser));
         File conv = new File(new File(userDir, "mensajes_" + safeName(other)), "");
@@ -133,7 +129,7 @@ public class Servidor2025 {
         try (PrintWriter pw = new PrintWriter(new FileWriter(f2, StandardCharsets.UTF_8, true))) { pw.println(linea); } catch (IOException ignored) {}
     }
 
-    // ====== Inbox ======
+    // ====== Inbox (servidor) ======
     private static File archivoInbox(String usuario) { return new File(MENSAJES_DIR, usuario + ".txt"); }
 
     private static synchronized List<Mensaje> cargarMensajes(String usuario) {
@@ -246,7 +242,7 @@ public class Servidor2025 {
     private static synchronized boolean marcarEstadoUsuario(String usuario, String nuevoEstado) {
         List<String> todas = new ArrayList<>();
         boolean cambiado = false;
-               try (BufferedReader br = new BufferedReader(new FileReader(USUARIOS_FILE))) {
+        try (BufferedReader br = new BufferedReader(new FileReader(USUARIOS_FILE))) {
             String line;
             while ((line = br.readLine()) != null) {
                 String[] p = line.split(",", 3);
@@ -353,8 +349,24 @@ public class Servidor2025 {
         return res;
     }
 
-    // ====== Tracking de conectados ======
+    // ====== Conectados ======
     private static final ConcurrentMap<String, ClientHandler> ONLINE = new ConcurrentHashMap<>();
+
+    // ====== Eventos de conversación a clientes ======
+    private static void sendConvEvent(String tipo, String from, String to, String ts, String extra, String idCorto) {
+        ClientHandler chFrom = ONLINE.get(from);
+        ClientHandler chTo   = ONLINE.get(to);
+        String payload;
+        if ("CONV_SAVE".equals(tipo)) {
+            payload = "CONV_SAVE|" + from + "|" + to + "|" + ts + "|" + extra;
+        } else if ("CONV_EDIT".equals(tipo)) {
+            payload = "CONV_EDIT|" + from + "|" + to + "|" + idCorto + "|" + ts + "|" + extra;
+        } else { // CONV_DELETE
+            payload = "CONV_DELETE|" + from + "|" + to + "|" + idCorto + "|" + ts;
+        }
+        if (chFrom != null) chFrom.safeSend(payload);
+        if (chTo   != null) chTo.safeSend(payload);
+    }
 
     // ====== Mensajería ======
     private static final AtomicLong MSG_SEQ = new AtomicLong(System.currentTimeMillis());
@@ -366,11 +378,13 @@ public class Servidor2025 {
         lista.add(m);
         guardarMensajes(to, lista);
 
-        // Log conversación
         String linea = m.ts.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                 + " | " + from + " -> " + to
                 + " | [" + shortId(m.id) + "] " + texto;
         logConversacion(from, to, linea);
+
+        // Notificar a ambos clientes para que persistan localmente la conversación por contacto
+        sendConvEvent("CONV_SAVE", from, to, m.ts.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME), m.texto, shortId(m.id));
 
         ClientHandler ch = ONLINE.get(to);
         if (ch != null) ch.safeSend("Tienes un nuevo mensaje de " + from + ". Usa '2' para abrir tu bandeja.");
@@ -386,6 +400,10 @@ public class Servidor2025 {
                 String linea = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                         + " | EDIT [" + shortId(id) + "] " + editor + " -> " + destinatario + " | " + nuevoTexto;
                 logConversacion(editor, destinatario, linea);
+
+                sendConvEvent("CONV_EDIT", editor, destinatario,
+                        LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                        m.texto, shortId(m.id));
                 return true;
             }
         }
@@ -401,6 +419,10 @@ public class Servidor2025 {
                 String linea = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
                         + " | DELETE [" + shortId(id) + "] " + editor + " -> " + destinatario;
                 logConversacion(editor, destinatario, linea);
+
+                sendConvEvent("CONV_DELETE", editor, destinatario,
+                        LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                        "", shortId(m.id));
                 return true;
             }
         }
@@ -518,8 +540,8 @@ public class Servidor2025 {
         private final Socket socket;
         private PrintWriter out;
         private BufferedReader in;
-        private String usuarioMostrado; // lo que ve el usuario (con "(Invitado)" si aplica)
-        private String usuarioBase;     // nombre sin sufijo
+        private String usuarioMostrado;
+        private String usuarioBase;
         private final Random rand = new Random();
 
         ClientHandler(Socket socket) { this.socket = socket; }
@@ -545,7 +567,7 @@ public class Servidor2025 {
                 try { archivoInbox(usuarioBase).createNewFile(); } catch (IOException ignored) {}
                 ONLINE.put(usuarioBase, this);
 
-                // Avisar al cliente su usuario base para que cree carpeta local en su sistema
+                // Indicar al cliente su usuario base para que cree carpetas locales
                 safeSend("SESSION_USER|" + usuarioBase);
 
                 out.println("Bienvenido " + usuarioMostrado + " al sistema.");
@@ -558,7 +580,6 @@ public class Servidor2025 {
             }
         }
 
-        // ====== Autenticación ======
         private String autenticarUsuario() throws IOException {
             out.println("Elige una opcion: (1) Registrarse, (2) Iniciar sesion, (3) Invitado");
             String opcion = in.readLine();
@@ -606,14 +627,13 @@ public class Servidor2025 {
             }
         }
 
-        // ====== Menu ======
         private void loopMenu() throws IOException {
             boolean seguir = true;
             while (seguir) {
                 String peek = in.readLine();
                 if (peek == null) break;
 
-                // Protocolos asíncronos que el cliente puede mandar al servidor
+                // Mensajes asíncronos del cliente (subidas/listas/errores)
                 if (peek.startsWith("LIST_RESP_BEGIN|")) {
                     String[] p = peek.split("\\|", 3);
                     if (p.length == 3) {
@@ -636,7 +656,6 @@ public class Servidor2025 {
                         }
                     }
                     continue;
-
                 } else if (peek.startsWith("FILE_UPLOAD_BEGIN|")) {
                     String[] p = peek.split("\\|", 3);
                     if (p.length == 3) {
@@ -661,7 +680,6 @@ public class Servidor2025 {
                         }
                     }
                     continue;
-
                 } else if (peek.startsWith("PULL_ERROR|")) {
                     String[] p = peek.split("\\|", 3);
                     if (p.length == 3) {
@@ -671,11 +689,11 @@ public class Servidor2025 {
                     continue;
                 }
 
-                // Menú normal
+                // Menú principal
                 out.println();
                 out.println("=== MENU ===");
                 out.println("1) Jugar adivina numero");
-                out.println("2) Bandeja de entrada");
+                out.println("2) Bandeja de entrada (por chat)");
                 out.println("3) Salir");
                 out.println("4) Enviar mensaje a usuario");
                 out.println("5) Ver conectados");
@@ -692,11 +710,9 @@ public class Servidor2025 {
                 out.println("Elige opcion:");
 
                 String op = peek;
-                if (op == null) break;
-
                 switch (op.trim()) {
                     case "1": juegoAdivina(); break;
-                    case "2": mostrarBandeja(); break;
+                    case "2": mostrarBandejaPorChat(); break;
                     case "3": out.println("Gracias. Adios!"); seguir = false; break;
                     case "4": enviarMensajeAUsuario(); break;
                     case "5": verConectados(); break;
@@ -715,7 +731,71 @@ public class Servidor2025 {
             }
         }
 
-        // ====== Bandeja ======
+        // ====== Bandeja por chat/usuario ======
+        private void mostrarBandejaPorChat() throws IOException {
+            List<Mensaje> msgs = cargarMensajes(usuarioBase);
+
+            // Agrupar por remitente (solo mensajes no eliminados)
+            Map<String, Integer> contador = new LinkedHashMap<>();
+            for (Mensaje m : msgs) {
+                if (m.estado == Mensaje.Estado.ELIMINADO) continue;
+                String remitente = m.from;
+                contador.put(remitente, contador.getOrDefault(remitente, 0) + 1);
+            }
+
+            if (contador.isEmpty()) {
+                out.println("No tienes mensajes nuevos.");
+                return;
+            }
+
+            out.println("=== TUS CHATS (nuevos) ===");
+            int idx = 1;
+            List<String> orden = new ArrayList<>();
+            for (Map.Entry<String, Integer> e : contador.entrySet()) {
+                String user = e.getKey();
+                if (user.equals(usuarioBase)) continue; // por si acaso
+                int n = e.getValue();
+                out.println(" " + idx + ") " + user + "  (" + n + " nuevo" + (n==1?"":"s") + ")");
+                orden.add(user);
+                idx++;
+            }
+            if (orden.isEmpty()) {
+                out.println("No tienes mensajes nuevos de otros usuarios.");
+                return;
+            }
+            out.println("Elige el numero de chat para abrir, o 0 para volver:");
+            String sel = in.readLine();
+            if (sel == null) return;
+            sel = sel.trim();
+            int nsel;
+            try { nsel = Integer.parseInt(sel); } catch (NumberFormatException e) { out.println("Entrada invalida."); return; }
+            if (nsel == 0) return;
+            if (nsel < 1 || nsel > orden.size()) { out.println("Fuera de rango."); return; }
+
+            String peer = orden.get(nsel - 1);
+
+            // Ordenar al cliente mostrar su historial local del peer
+            safeSend("SHOW_CONV|" + peer);
+
+            // Preguntar si marcar como leídos (remover del inbox del servidor)
+            int nuevos = contador.getOrDefault(peer, 0);
+            out.println("¿Marcar como leidos los " + nuevos + " mensajes de '" + peer + "'? (si/no)");
+            String conf = in.readLine();
+            if (conf != null && conf.trim().equalsIgnoreCase("si")) {
+                List<Mensaje> restantes = new ArrayList<>();
+                for (Mensaje m : msgs) {
+                    if (m.estado == Mensaje.Estado.ELIMINADO) { restantes.add(m); continue; }
+                    // mantener todo MENOS los mensajes recibidos de ese peer
+                    if (!peer.equals(m.from)) restantes.add(m);
+                }
+                guardarMensajes(usuarioBase, restantes);
+                out.println("Listo. Marcados como leidos de '" + peer + "'.");
+            } else {
+                out.println("Conversacion conservada sin marcar como leida.");
+            }
+        }
+
+        // ====== Bandeja (otras utilidades existentes) ======
         private void mostrarBandeja() throws IOException {
             List<Mensaje> msgs = cargarMensajes(usuarioBase);
             if (msgs.isEmpty()) { out.println("Tu bandeja esta vacia."); return; }
@@ -838,7 +918,7 @@ public class Servidor2025 {
             if (!alguno) out.println("No hay mensajes enviados a " + dest + ".");
         }
 
-        // ====== Bloqueo / Desbloqueo / Ver bloqueados ======
+        // ====== Bloqueos / Baja ======
         private void bloquearUsuarioFlujo() throws IOException {
             out.println("Bloquear (no recibir de):");
             String emisor = in.readLine();
@@ -868,7 +948,6 @@ public class Servidor2025 {
             else { out.println("Bloqueados:"); for (String u : lista) out.println(" - " + u); }
         }
 
-        // ====== Auto-baja ======
         private void darDeBajaPropiaFlujo() throws IOException {
             out.println("¿Confirma dar de baja su cuenta? (si/no)");
             String conf = in.readLine();
@@ -891,7 +970,7 @@ public class Servidor2025 {
             else { out.println("No se pudo dar de baja (contraseña incorrecta o ya en BAJA)."); }
         }
 
-        // ====== Envío de archivos (push manual) ======
+        // ====== Archivos .txt (push/list/pull) ======
         private void enviarArchivoPushFlujo() throws IOException {
             out.println("Usuario destinatario del archivo (.txt):");
             String dest = in.readLine();
@@ -910,7 +989,6 @@ public class Servidor2025 {
             out.println("Solicitando subida del archivo...");
         }
 
-        // ====== Listar .txt del directorio de otro usuario ======
         private void listarTxtDeOtroUsuarioFlujo() throws IOException {
             out.println("Usuario a consultar sus .txt:");
             String remoto = in.readLine();
@@ -922,10 +1000,9 @@ public class Servidor2025 {
             if (estaBloqueado(remoto, usuarioBase)) { out.println("No permitido: ese usuario te tiene bloqueado."); return; }
 
             ch.safeSend("LIST_LOCAL_TXT|" + usuarioBase);
-            out.println("Solicitud enviada a " + remoto + ". La lista aparecerá abajo cuando responda.");
+            out.println("Solicitud enviada a " + remoto + ". La lista aparecerá cuando responda.");
         }
 
-        // ====== Descargar un .txt desde otro usuario ======
         private void descargarTxtDeOtroUsuarioFlujo() throws IOException {
             out.println("Usuario del que deseas descargar:");
             String remoto = in.readLine();
@@ -947,7 +1024,7 @@ public class Servidor2025 {
             }
 
             ch.safeSend("PULL_FILE|" + usuarioBase + "|" + nombre);
-            out.println("Solicitud de descarga enviada a " + remoto + ". Si el archivo existe, comenzará la transferencia.");
+            out.println("Solicitud de descarga enviada a " + remoto + ".");
         }
 
         // ====== Juego ======
