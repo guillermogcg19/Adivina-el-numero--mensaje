@@ -28,16 +28,14 @@ public class Servidor2025 {
     private static final File BLOQUEOS_DIR = new File("bloqueos"); // lista de bloqueados por usuario
     private static final File USUARIOS_FILE = new File("usuarios.txt");
     private static final File INVITADOS_FILE = new File("invitados.txt");
-    // === NUEVO: base de archivos compartidos por usuario
-    private static final File FILES_DIR = new File("archivos");
+    private static final File ARCHIVOS_DIR = new File("archivos"); // historial por usuario
 
     static {
         try { if (!MENSAJES_DIR.exists()) MENSAJES_DIR.mkdirs(); } catch (Exception ignored) {}
         try { if (!BLOQUEOS_DIR.exists()) BLOQUEOS_DIR.mkdirs(); } catch (Exception ignored) {}
         try { if (!USUARIOS_FILE.exists()) USUARIOS_FILE.createNewFile(); } catch (IOException ignored) {}
         try { if (!INVITADOS_FILE.exists()) INVITADOS_FILE.createNewFile(); } catch (IOException ignored) {}
-        // === NUEVO
-        try { if (!FILES_DIR.exists()) FILES_DIR.mkdirs(); } catch (Exception ignored) {}
+        try { if (!ARCHIVOS_DIR.exists()) ARCHIVOS_DIR.mkdirs(); } catch (Exception ignored) {}
     }
 
     // ====== Modelo de mensaje ======
@@ -105,24 +103,34 @@ public class Servidor2025 {
         }
     }
 
-    // ====== Helpers de ID corto ======
-    private static String shortId(long id) {
-        // Base36, en mayúsculas, muy corto (p.ej., 123456789 -> "21I3V9")
-        return Long.toString(id, 36).toUpperCase();
-    }
-
+    // ====== Helpers ======
+    private static String shortId(long id) { return Long.toString(id, 36).toUpperCase(); } // Base36 corto
     private static Long parseFlexibleId(String s) {
         if (s == null || s.trim().isEmpty()) return null;
         s = s.trim();
-        try { // intenta como número completo
-            return Long.parseLong(s);
-        } catch (NumberFormatException e) {
-            try { // intenta como base36
-                return Long.parseLong(s.toLowerCase(), 36);
-            } catch (NumberFormatException ex) {
-                return null;
-            }
+        try { return Long.parseLong(s); }
+        catch (NumberFormatException e) {
+            try { return Long.parseLong(s.toLowerCase(), 36); }
+            catch (NumberFormatException ex) { return null; }
         }
+    }
+
+    private static String safeName(String s) {
+        if (s == null) return "desconocido";
+        return s.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+    }
+    // Directorio de conversación para "baseUser" con "other" -> archivos/baseUser/mensajes_other/
+    private static File convDir(String baseUser, String other) {
+        File userDir = new File(ARCHIVOS_DIR, safeName(baseUser));
+        File conv = new File(new File(userDir, "mensajes_" + safeName(other)), "");
+        if (!conv.exists()) conv.mkdirs();
+        return conv;
+    }
+    private static synchronized void logConversacion(String from, String to, String linea) {
+        File f1 = new File(convDir(from, to), "conversacion.txt");
+        File f2 = new File(convDir(to, from), "conversacion.txt");
+        try (PrintWriter pw = new PrintWriter(new FileWriter(f1, StandardCharsets.UTF_8, true))) { pw.println(linea); } catch (IOException ignored) {}
+        try (PrintWriter pw = new PrintWriter(new FileWriter(f2, StandardCharsets.UTF_8, true))) { pw.println(linea); } catch (IOException ignored) {}
     }
 
     // ====== Inbox ======
@@ -157,9 +165,8 @@ public class Servidor2025 {
 
     private static synchronized void vaciarInbox(String usuario) {
         File f = archivoInbox(usuario);
-        try (PrintWriter pw = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8, false))) {
-            // truncado
-        } catch (IOException ignored) {}
+        try (PrintWriter pw = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8, false))) { /* truncado */ }
+        catch (IOException ignored) {}
     }
 
     private static synchronized void archivarInbox(String usuario) {
@@ -167,7 +174,7 @@ public class Servidor2025 {
         if (f.exists()) {
             File bak = new File(MENSAJES_DIR, usuario + ".bak");
             if (bak.exists()) bak = new File(MENSAJES_DIR, usuario + "-" + System.currentTimeMillis() + ".bak");
-            if (!f.renameTo(bak)) vaciarInbox(usuario); // fallback
+            if (!f.renameTo(bak)) vaciarInbox(usuario);
         }
     }
 
@@ -176,8 +183,6 @@ public class Servidor2025 {
         try (PrintWriter pw = new PrintWriter(new FileWriter(USUARIOS_FILE, true))) {
             pw.println(usuario + "," + password + ",ACTIVO");
         }
-        // === NUEVO: preparar carpeta de archivos para ese usuario
-        new File(FILES_DIR, usuario).mkdirs();
     }
 
     private static boolean validarUsuario(String usuario, String password) {
@@ -195,9 +200,7 @@ public class Servidor2025 {
     }
 
     private static synchronized void guardarInvitado(String invitado) throws IOException {
-        try (PrintWriter pw = new PrintWriter(new FileWriter(INVITADOS_FILE, true))) {
-            pw.println(invitado);
-        }
+        try (PrintWriter pw = new PrintWriter(new FileWriter(INVITADOS_FILE, true))) { pw.println(invitado); }
     }
 
     private static boolean existeUsuarioRegistrado(String usuario) {
@@ -243,7 +246,7 @@ public class Servidor2025 {
     private static synchronized boolean marcarEstadoUsuario(String usuario, String nuevoEstado) {
         List<String> todas = new ArrayList<>();
         boolean cambiado = false;
-        try (BufferedReader br = new BufferedReader(new FileReader(USUARIOS_FILE))) {
+               try (BufferedReader br = new BufferedReader(new FileReader(USUARIOS_FILE))) {
             String line;
             while ((line = br.readLine()) != null) {
                 String[] p = line.split(",", 3);
@@ -253,11 +256,8 @@ public class Servidor2025 {
                     todas.add(nombre + "," + pass + "," + nuevoEstado);
                     cambiado = true;
                 } else {
-                    if (p.length == 2) {
-                        todas.add(p[0].trim() + "," + p[1].trim() + ",ACTIVO");
-                    } else {
-                        todas.add(line);
-                    }
+                    if (p.length == 2) todas.add(p[0].trim() + "," + p[1].trim() + ",ACTIVO");
+                    else todas.add(line);
                 }
             }
         } catch (IOException ignored) {}
@@ -296,7 +296,6 @@ public class Servidor2025 {
         return res;
     }
 
-    // receptor NO quiere recibir de emisor
     private static synchronized boolean bloquear(String receptor, String emisor) {
         List<String> lista = cargarBloqueados(receptor);
         if (!lista.contains(emisor)) {
@@ -325,61 +324,33 @@ public class Servidor2025 {
         return lista.contains(emisor);
     }
 
-    // Usuarios a los que "from" puede escribir (activos, no él mismo y que NO han bloqueado a "from")
     private static List<String> usuariosDisponiblesPara(String from) {
         List<String> base = listarUsuariosRegistrados();
         List<String> out = new ArrayList<>();
         for (String u : base) {
             if (u.equals(from)) continue;
             if (!esUsuarioActivo(u)) continue;
-            if (estaBloqueado(u, from)) continue; // el destinatario bloqueó a "from"
+            if (estaBloqueado(u, from)) continue;
             out.add(u);
         }
         return out;
     }
 
-    // === NUEVO: destinatarios a los que YA les envié mensajes ===
     private static List<String> destinatariosConMensajesDe(String from) {
         Set<String> dests = new LinkedHashSet<>();
         for (String u : listarUsuariosRegistrados()) {
             if (u.equals(from)) continue;
             for (Mensaje m : cargarMensajes(u)) {
-                if (from.equals(m.from)) {
-                    dests.add(u);
-                    break;
-                }
+                if (from.equals(m.from)) { dests.add(u); break; }
             }
         }
         return new ArrayList<>(dests);
     }
 
-    // === NUEVO: mensajes que yo envié a un destinatario (no eliminados si se desea) ===
     private static List<Mensaje> mensajesEnviadosA(String from, String dest) {
         List<Mensaje> res = new ArrayList<>();
-        for (Mensaje m : cargarMensajes(dest)) {
-            if (from.equals(m.from)) res.add(m);
-        }
+        for (Mensaje m : cargarMensajes(dest)) if (from.equals(m.from)) res.add(m);
         return res;
-    }
-
-    // === NUEVO: helpers de archivos .txt de usuarios (servidor) ===
-    private static File userFilesDir(String user) { return new File(FILES_DIR, user); }
-    private static List<String> listTextFiles(String user) {
-        List<String> out = new ArrayList<>();
-        File dir = userFilesDir(user);
-        File[] files = dir.listFiles((d, n) -> n.toLowerCase().endsWith(".txt"));
-        if (files != null) for (File f : files) out.add(f.getName());
-        return out;
-    }
-    private static void enviarArchivoATramo(PrintWriter out, File f) {
-        out.println("FILE_BEGIN " + f.getName());
-        try (BufferedReader br = new BufferedReader(new FileReader(f, StandardCharsets.UTF_8))) {
-            String l;
-            while ((l = br.readLine()) != null) out.println(l);
-        } catch (IOException e) {
-            out.println("[ERROR] Leyendo archivo: " + e.getMessage());
-        }
-        out.println("FILE_END");
     }
 
     // ====== Tracking de conectados ======
@@ -389,11 +360,17 @@ public class Servidor2025 {
     private static final AtomicLong MSG_SEQ = new AtomicLong(System.currentTimeMillis());
 
     private static synchronized long enviarMensajeUsuario(String from, String to, String texto) {
-        if (estaBloqueado(to, from)) return -1L; // rechazado: to bloqueó a from
+        if (estaBloqueado(to, from)) return -1L;
         Mensaje m = new Mensaje(MSG_SEQ.getAndIncrement(), LocalDateTime.now(), from, to, Mensaje.Estado.NORMAL, texto);
         List<Mensaje> lista = cargarMensajes(to);
         lista.add(m);
         guardarMensajes(to, lista);
+
+        // Log conversación
+        String linea = m.ts.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                + " | " + from + " -> " + to
+                + " | [" + shortId(m.id) + "] " + texto;
+        logConversacion(from, to, linea);
 
         ClientHandler ch = ONLINE.get(to);
         if (ch != null) ch.safeSend("Tienes un nuevo mensaje de " + from + ". Usa '2' para abrir tu bandeja.");
@@ -404,9 +381,11 @@ public class Servidor2025 {
         List<Mensaje> lista = cargarMensajes(destinatario);
         for (Mensaje m : lista) {
             if (m.id == id && m.from.equals(editor) && m.estado != Mensaje.Estado.ELIMINADO) {
-                m.texto = nuevoTexto;
-                m.estado = Mensaje.Estado.EDITADO;
+                m.texto = nuevoTexto; m.estado = Mensaje.Estado.EDITADO;
                 guardarMensajes(destinatario, lista);
+                String linea = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        + " | EDIT [" + shortId(id) + "] " + editor + " -> " + destinatario + " | " + nuevoTexto;
+                logConversacion(editor, destinatario, linea);
                 return true;
             }
         }
@@ -417,9 +396,11 @@ public class Servidor2025 {
         List<Mensaje> lista = cargarMensajes(destinatario);
         for (Mensaje m : lista) {
             if (m.id == id && m.from.equals(editor) && m.estado != Mensaje.Estado.ELIMINADO) {
-                m.estado = Mensaje.Estado.ELIMINADO;
-                m.texto = "";
+                m.estado = Mensaje.Estado.ELIMINADO; m.texto = "";
                 guardarMensajes(destinatario, lista);
+                String linea = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                        + " | DELETE [" + shortId(id) + "] " + editor + " -> " + destinatario;
+                logConversacion(editor, destinatario, linea);
                 return true;
             }
         }
@@ -549,7 +530,7 @@ public class Servidor2025 {
         public void run() {
             try (Socket s = socket) {
                 out = new PrintWriter(s.getOutputStream(), true);
-                in  = new BufferedReader(new InputStreamReader(s.getInputStream()));
+                in  = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
 
                 usuarioMostrado = autenticarUsuario();
                 if (usuarioMostrado == null) {
@@ -563,6 +544,9 @@ public class Servidor2025 {
 
                 try { archivoInbox(usuarioBase).createNewFile(); } catch (IOException ignored) {}
                 ONLINE.put(usuarioBase, this);
+
+                // Avisar al cliente su usuario base para que cree carpeta local en su sistema
+                safeSend("SESSION_USER|" + usuarioBase);
 
                 out.println("Bienvenido " + usuarioMostrado + " al sistema.");
                 loopMenu();
@@ -626,6 +610,68 @@ public class Servidor2025 {
         private void loopMenu() throws IOException {
             boolean seguir = true;
             while (seguir) {
+                String peek = in.readLine();
+                if (peek == null) break;
+
+                // Protocolos asíncronos que el cliente puede mandar al servidor
+                if (peek.startsWith("LIST_RESP_BEGIN|")) {
+                    String[] p = peek.split("\\|", 3);
+                    if (p.length == 3) {
+                        String solicitante = p[1].trim();
+                        int n = 0;
+                        try { n = Integer.parseInt(p[2].trim()); } catch (Exception ignored) {}
+                        ClientHandler req = ONLINE.get(solicitante);
+                        if (req != null) {
+                            req.safeSend("Lista de .txt de " + usuarioBase + " (" + n + "):");
+                            for (int i = 0; i < n; i++) {
+                                String item = in.readLine();
+                                if (item == null) break;
+                                req.safeSend(" - " + item);
+                            }
+                            in.readLine(); // LIST_RESP_END
+                            req.safeSend("Fin de lista.");
+                        } else {
+                            for (int i = 0; i < n; i++) if (in.readLine() == null) break;
+                            in.readLine(); // LIST_RESP_END
+                        }
+                    }
+                    continue;
+
+                } else if (peek.startsWith("FILE_UPLOAD_BEGIN|")) {
+                    String[] p = peek.split("\\|", 3);
+                    if (p.length == 3) {
+                        String dest = p[1].trim();
+                        String baseName = p[2].trim();
+                        ClientHandler receptor = ONLINE.get(dest);
+                        if (receptor != null) {
+                            receptor.safeSend("FILE_BEGIN " + baseName);
+                            String linea;
+                            while ((linea = in.readLine()) != null) {
+                                if ("FILE_UPLOAD_END".equals(linea)) break;
+                                receptor.safeSend(linea);
+                            }
+                            receptor.safeSend("FILE_END");
+                            safeSend("Archivo enviado a " + dest + " -> " + baseName);
+                        } else {
+                            String linea;
+                            while ((linea = in.readLine()) != null) {
+                                if ("FILE_UPLOAD_END".equals(linea)) break;
+                            }
+                            safeSend("ERROR: El destinatario " + dest + " ya no está en línea.");
+                        }
+                    }
+                    continue;
+
+                } else if (peek.startsWith("PULL_ERROR|")) {
+                    String[] p = peek.split("\\|", 3);
+                    if (p.length == 3) {
+                        ClientHandler req = ONLINE.get(p[1].trim());
+                        if (req != null) req.safeSend("ERROR (pull desde " + usuarioBase + "): " + p[2].trim());
+                    }
+                    continue;
+                }
+
+                // Menú normal
                 out.println();
                 out.println("=== MENU ===");
                 out.println("1) Jugar adivina numero");
@@ -640,12 +686,12 @@ public class Servidor2025 {
                 out.println("10) Desbloquear usuario");
                 out.println("11) Dar de baja mi cuenta");
                 out.println("12) Ver mi lista de bloqueados");
-                // === NUEVO:
-                out.println("13) Ver archivos .txt de un usuario");
-                out.println("14) Descargar .txt de un usuario");
+                out.println("13) Enviar archivo .txt a usuario (push)");
+                out.println("14) Listar .txt de otro usuario");
+                out.println("15) Descargar .txt de otro usuario");
                 out.println("Elige opcion:");
 
-                String op = in.readLine();
+                String op = peek;
                 if (op == null) break;
 
                 switch (op.trim()) {
@@ -661,9 +707,9 @@ public class Servidor2025 {
                     case "10": desbloquearUsuarioFlujo(); break;
                     case "11": darDeBajaPropiaFlujo(); break;
                     case "12": verBloqueadosFlujo(); break;
-                    // === NUEVO:
-                    case "13": verArchivosUsuarioFlujo(); break;
-                    case "14": descargarArchivoUsuarioFlujo(); break;
+                    case "13": enviarArchivoPushFlujo(); break;
+                    case "14": listarTxtDeOtroUsuarioFlujo(); break;
+                    case "15": descargarTxtDeOtroUsuarioFlujo(); break;
                     default: out.println("Opcion invalida.");
                 }
             }
@@ -714,16 +760,12 @@ public class Servidor2025 {
             else out.println("Mensaje enviado a " + dest + ". id=" + id + " (corto " + shortId(id) + ")");
         }
 
-        private void verConectados() {
-            out.println("Conectados (" + ONLINE.size() + "): " + ONLINE.keySet());
-        }
+        private void verConectados() { out.println("Conectados (" + ONLINE.size() + "): " + ONLINE.keySet()); }
 
-        // === NUEVO flujo: elegir destinatario de tu lista + usar ID corto ===
         private void editarMensajeFlujo() throws IOException {
             List<String> dests = destinatariosConMensajesDe(usuarioBase);
             if (dests.isEmpty()) { out.println("No has enviado mensajes a nadie aún."); return; }
-            out.println("Has enviado mensajes a:");
-            for (String d : dests) out.println(" - " + d);
+            out.println("Has enviado mensajes a:"); for (String d : dests) out.println(" - " + d);
 
             out.println("Editar mensaje hacia (usuario):");
             String dest = in.readLine();
@@ -734,16 +776,14 @@ public class Servidor2025 {
             if (lista.isEmpty()) { out.println("No hay mensajes hacia " + dest + "."); return; }
 
             out.println("Tus mensajes a " + dest + ":");
-            for (Mensaje m : lista) {
+            for (Mensaje m : lista)
                 if (m.estado != Mensaje.Estado.ELIMINADO) {
                     String hora = m.ts.toLocalTime().withNano(0).toString();
                     out.println(" [" + shortId(m.id) + "] " + hora + " -> " + m.textoParaMostrar());
                 }
-            }
 
             out.println("ID del mensaje a editar (corto o completo):");
-            String sId = in.readLine();
-            Long id = parseFlexibleId(sId);
+            Long id = parseFlexibleId(in.readLine());
             if (id == null) { out.println("ID inválido."); return; }
 
             out.println("Nuevo texto:");
@@ -757,8 +797,7 @@ public class Servidor2025 {
         private void borrarMensajeFlujo() throws IOException {
             List<String> dests = destinatariosConMensajesDe(usuarioBase);
             if (dests.isEmpty()) { out.println("No has enviado mensajes a nadie aún."); return; }
-            out.println("Has enviado mensajes a:");
-            for (String d : dests) out.println(" - " + d);
+            out.println("Has enviado mensajes a:"); for (String d : dests) out.println(" - " + d);
 
             out.println("Borrar mensaje hacia (usuario):");
             String dest = in.readLine();
@@ -769,16 +808,14 @@ public class Servidor2025 {
             if (lista.isEmpty()) { out.println("No hay mensajes hacia " + dest + "."); return; }
 
             out.println("Tus mensajes a " + dest + ":");
-            for (Mensaje m : lista) {
+            for (Mensaje m : lista)
                 if (m.estado != Mensaje.Estado.ELIMINADO) {
                     String hora = m.ts.toLocalTime().withNano(0).toString();
                     out.println(" [" + shortId(m.id) + "] " + hora + " -> " + m.textoParaMostrar());
                 }
-            }
 
             out.println("ID del mensaje a borrar (corto o completo):");
-            String sId = in.readLine();
-            Long id = parseFlexibleId(sId);
+            Long id = parseFlexibleId(in.readLine());
             if (id == null) { out.println("ID inválido."); return; }
 
             boolean ok = borrarMensaje(usuarioBase, dest, id);
@@ -793,12 +830,11 @@ public class Servidor2025 {
 
             List<Mensaje> lista = cargarMensajes(dest);
             boolean alguno = false;
-            for (Mensaje m : lista) {
+            for (Mensaje m : lista)
                 if (m.from.equals(usuarioBase)) {
                     alguno = true;
                     out.println(" [" + shortId(m.id) + "] " + m.estado + " -> " + m.textoParaMostrar());
                 }
-            }
             if (!alguno) out.println("No hay mensajes enviados a " + dest + ".");
         }
 
@@ -829,10 +865,7 @@ public class Servidor2025 {
         private void verBloqueadosFlujo() {
             List<String> lista = cargarBloqueados(usuarioBase);
             if (lista.isEmpty()) out.println("No tienes usuarios bloqueados.");
-            else {
-                out.println("Bloqueados:");
-                for (String u : lista) out.println(" - " + u);
-            }
+            else { out.println("Bloqueados:"); for (String u : lista) out.println(" - " + u); }
         }
 
         // ====== Auto-baja ======
@@ -854,50 +887,67 @@ public class Servidor2025 {
             if (pass == null) { out.println("Cancelado."); return; }
 
             boolean ok = darDeBajaPropia(usuarioBase, pass.trim());
-            if (ok) {
-                out.println("Tu cuenta ha sido dada de baja. Cerrando sesión...");
-                ONLINE.remove(usuarioBase);
-            } else {
-                out.println("No se pudo dar de baja (contraseña incorrecta o ya en BAJA).");
-            }
+            if (ok) { out.println("Tu cuenta ha sido dada de baja. Cerrando sesión..."); ONLINE.remove(usuarioBase); }
+            else { out.println("No se pudo dar de baja (contraseña incorrecta o ya en BAJA)."); }
         }
 
-        // ====== NUEVO: Ver/descargar .txt de usuario ======
-        private void verArchivosUsuarioFlujo() throws IOException {
-            out.println("Usuario a consultar sus .txt (en el servidor):");
-            String u = in.readLine();
-            if (u == null || u.trim().isEmpty()) { out.println("Cancelado."); return; }
-            u = u.trim();
-            if (!existeUsuarioRegistrado(u)) { out.println("No existe el usuario."); return; }
-            List<String> files = listTextFiles(u);
-            if (files.isEmpty()) out.println("No hay .txt en 'archivos/" + u + "/'");
-            else {
-                out.println("Archivos .txt de " + u + ":");
-                for (String f : files) out.println(" - " + f);
-            }
+        // ====== Envío de archivos (push manual) ======
+        private void enviarArchivoPushFlujo() throws IOException {
+            out.println("Usuario destinatario del archivo (.txt):");
+            String dest = in.readLine();
+            if (dest == null || dest.trim().isEmpty()) { out.println("Cancelado."); return; }
+            dest = dest.trim();
+
+            if (!ONLINE.containsKey(dest)) { out.println("Destinatario no está en línea. (Conéctalo para recibir)"); return; }
+            if (estaBloqueado(dest, usuarioBase)) { out.println("El destinatario te tiene bloqueado."); return; }
+
+            out.println("Ruta local del archivo .txt a enviar (en TU máquina):");
+            String ruta = in.readLine();
+            if (ruta == null || ruta.trim().isEmpty()) { out.println("Cancelado."); return; }
+            ruta = ruta.trim();
+
+            safeSend("UPLOAD_REQUEST|" + dest + "|" + ruta);
+            out.println("Solicitando subida del archivo...");
         }
 
-        private void descargarArchivoUsuarioFlujo() throws IOException {
-            out.println("Descargar .txt de (usuario):");
-            String from = in.readLine();
-            if (from == null || from.trim().isEmpty()) { out.println("Cancelado."); return; }
-            from = from.trim();
-            if (!existeUsuarioRegistrado(from)) { out.println("No existe el usuario."); return; }
+        // ====== Listar .txt del directorio de otro usuario ======
+        private void listarTxtDeOtroUsuarioFlujo() throws IOException {
+            out.println("Usuario a consultar sus .txt:");
+            String remoto = in.readLine();
+            if (remoto == null || remoto.trim().isEmpty()) { out.println("Cancelado."); return; }
+            remoto = remoto.trim();
 
-            List<String> files = listTextFiles(from);
-            if (files.isEmpty()) { out.println("Ese usuario no tiene .txt en el servidor."); return; }
-            out.println("Disponibles en archivos/" + from + "/:");
-            for (String f : files) out.println(" - " + f);
+            ClientHandler ch = ONLINE.get(remoto);
+            if (ch == null) { out.println("El usuario '" + remoto + "' no está en línea."); return; }
+            if (estaBloqueado(remoto, usuarioBase)) { out.println("No permitido: ese usuario te tiene bloqueado."); return; }
 
-            out.println("Nombre exacto del archivo (.txt):");
-            String fname = in.readLine();
-            if (fname == null || fname.trim().isEmpty()) { out.println("Cancelado."); return; }
-            fname = fname.trim();
+            ch.safeSend("LIST_LOCAL_TXT|" + usuarioBase);
+            out.println("Solicitud enviada a " + remoto + ". La lista aparecerá abajo cuando responda.");
+        }
 
-            File src = new File(userFilesDir(from), fname);
-            if (!src.exists() || !src.isFile()) { out.println("No existe ese archivo."); return; }
+        // ====== Descargar un .txt desde otro usuario ======
+        private void descargarTxtDeOtroUsuarioFlujo() throws IOException {
+            out.println("Usuario del que deseas descargar:");
+            String remoto = in.readLine();
+            if (remoto == null || remoto.trim().isEmpty()) { out.println("Cancelado."); return; }
+            remoto = remoto.trim();
 
-            enviarArchivoATramo(out, src); // el cliente debe guardar el stream entre FILE_BEGIN/FILE_END
+            ClientHandler ch = ONLINE.get(remoto);
+            if (ch == null) { out.println("El usuario '" + remoto + "' no está en línea."); return; }
+            if (estaBloqueado(remoto, usuarioBase)) { out.println("No permitido: ese usuario te tiene bloqueado."); return; }
+
+            out.println("Nombre del archivo .txt en la carpeta del usuario remoto (exacto):");
+            String nombre = in.readLine();
+            if (nombre == null || nombre.trim().isEmpty()) { out.println("Cancelado."); return; }
+            nombre = nombre.trim();
+
+            if (!nombre.toLowerCase().endsWith(".txt") || nombre.contains("..") || nombre.contains("/") || nombre.contains("\\")) {
+                out.println("Nombre inválido. Debe ser un .txt simple (sin rutas).");
+                return;
+            }
+
+            ch.safeSend("PULL_FILE|" + usuarioBase + "|" + nombre);
+            out.println("Solicitud de descarga enviada a " + remoto + ". Si el archivo existe, comenzará la transferencia.");
         }
 
         // ====== Juego ======
